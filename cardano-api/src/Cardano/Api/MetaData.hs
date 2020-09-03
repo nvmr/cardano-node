@@ -9,6 +9,7 @@ module Cardano.Api.MetaData
   , renderTxMetadataValidationError
   , validateTxMetadata
   , bytesPrefix
+  , maxStringSize
   ) where
 
 import           Cardano.Prelude hiding (MetaData)
