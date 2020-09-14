@@ -127,7 +127,7 @@ prop_metadata_roundtrip_via_schema_json = Hedgehog.property $ do
 -- Generators
 --
 
-genJsonForTxMetadata :: TxMetadataJsonMapping -> Gen Aeson.Value
+genJsonForTxMetadata :: TxMetadataJsonSchema -> Gen Aeson.Value
 genJsonForTxMetadata mapping =
     Gen.sized $ \sz ->
       Aeson.object <$>
@@ -135,7 +135,7 @@ genJsonForTxMetadata mapping =
                ((,) <$> (Text.pack . show <$> Gen.word64 Range.constantBounded)
                     <*> genJsonForTxMetadataValue mapping)
 
-genJsonForTxMetadataValue :: TxMetadataJsonMapping -> Gen Aeson.Value
+genJsonForTxMetadataValue :: TxMetadataJsonSchema -> Gen Aeson.Value
 genJsonForTxMetadataValue TxMetadataJsonNoSchema = genJsonValue
   where
     genJsonValue :: Gen Aeson.Value
