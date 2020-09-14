@@ -64,7 +64,7 @@ newtype ConfigYamlFilePath = ConfigYamlFilePath
 
 newtype DbFile = DbFile
   { unDB :: FilePath }
-  deriving newtype Show
+  deriving newtype (Eq, Show)
 
 newtype GenesisFile = GenesisFile
   { unGenesisFile :: FilePath }
@@ -177,6 +177,45 @@ data NodeConfiguration
        , ncLogMetrics     :: Bool
        , ncTraceConfig    :: TraceOptions
        } deriving Show
+
+
+{-
+data NodeCLI = NodeCLI
+  {
+  }
+
+data NodeConfiguration
+  = NodeConfiguration
+      {  ncNodeAddr        :: !(Maybe NodeAddress)
+          -- | Filepath of the configuration yaml file. This file determines
+          -- all the configuration settings required for the cardano node
+          -- (logging, tracing, protocol, slot length etc)
+       , ncConfigFile      :: !ConfigYamlFilePath
+       , ncTopologyFile    :: !TopologyFile
+       , ncDatabaseFile    :: !DbFile
+       , ncProtocolFiles   :: !ProtocolFilepaths
+       , ncValidateDB      :: !Bool
+       , ncShutdownIPC     :: !(Maybe Fd)
+       , ncShutdownOnSlotSynced :: !MaxSlotNo
+
+       -- What used to be the NodeConfiguration
+        -- Protocol-specific parameters:
+       , ncProtocolConfig :: NodeProtocolConfiguration
+
+         -- Node parameters, not protocol-specific:
+       , ncSocketPath     :: Maybe SocketPath
+
+         -- BlockFetch configuration
+       , ncMaxConcurrencyBulkSync :: Maybe MaxConcurrencyBulkSync
+       , ncMaxConcurrencyDeadline :: Maybe MaxConcurrencyDeadline
+
+         -- Logging parameters:
+       , ncViewMode       :: ViewMode
+       , ncLoggingSwitch  :: Bool
+       , ncLogMetrics     :: Bool
+       , ncTraceConfig    :: TraceOptions
+       } deriving Show
+-}
 
 class AdjustFilePaths a where
   adjustFilePaths :: (FilePath -> FilePath) -> a -> a
@@ -313,7 +352,7 @@ data ProtocolFilepaths =
      , shelleyKESFile  :: !(Maybe FilePath)
      , shelleyVRFFile  :: !(Maybe FilePath)
      , shelleyCertFile :: !(Maybe FilePath)
-     }
+     } deriving (Eq, Show)
 
 newtype GenesisHash = GenesisHash (Crypto.Hash Crypto.Blake2b_256 ByteString)
   deriving newtype (Eq, Show, ToJSON, FromJSON)
@@ -324,7 +363,7 @@ data NodeProtocolConfiguration =
      | NodeProtocolConfigurationCardano NodeByronProtocolConfiguration
                                         NodeShelleyProtocolConfiguration
                                         NodeHardForkProtocolConfiguration
-  deriving Show
+  deriving (Eq, Show)
 
 data NodeShelleyProtocolConfiguration =
      NodeShelleyProtocolConfiguration {
@@ -346,7 +385,7 @@ data NodeShelleyProtocolConfiguration =
        -- will stop with an appropriate error message.
      , npcShelleyMaxSupportedProtocolVersion :: !Natural
      }
-  deriving Show
+  deriving (Eq, Show)
 
 data NodeByronProtocolConfiguration =
      NodeByronProtocolConfiguration {
@@ -372,7 +411,7 @@ data NodeByronProtocolConfiguration =
      , npcByronSupportedProtocolVersionMinor :: !Word16
      , npcByronSupportedProtocolVersionAlt   :: !Word8
      }
-  deriving Show
+  deriving (Eq, Show)
 
 -- | Configuration relating to a hard forks themselves, not the specific eras.
 --
@@ -403,7 +442,7 @@ data NodeHardForkProtocolConfiguration =
        --
      , npcTestShelleyHardForkAtVersion :: Maybe Word
      }
-  deriving Show
+  deriving (Eq, Show)
 
 newtype SocketPath = SocketPath
   { unSocketPath :: FilePath }
@@ -412,7 +451,7 @@ newtype SocketPath = SocketPath
 
 newtype TopologyFile = TopologyFile
   { unTopology :: FilePath }
-  deriving newtype Show
+  deriving newtype (Show, Eq)
 
 instance AdjustFilePaths NodeProtocolConfiguration where
 
