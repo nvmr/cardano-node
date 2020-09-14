@@ -3,11 +3,11 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
 module Cardano.Node.Types
-  ( ConfigError(..)
+  ( AdjustFilePaths(..)
+  , ConfigError(..)
   , ConfigYamlFilePath(..)
   , DbFile(..)
   , GenesisFile(..)
-  , NodeCLI(..)
   , NodeConfiguration(..)
   , ProtocolFilepaths (..)
   , GenesisHash(..)
@@ -23,8 +23,6 @@ module Cardano.Node.Types
   , TopologyFile(..)
   , ViewMode(..)
   , ncProtocol
-  , parseNodeConfiguration
-  , parseNodeConfigurationFP
   , protocolName
   ) where
 
@@ -35,10 +33,7 @@ import           Control.Monad (fail)
 import           Data.Aeson
 import           Data.IP (IP)
 import qualified Data.Text as Text
-import           Data.Yaml (decodeFileThrow)
 import           Network.Socket (PortNumber)
-import           System.FilePath (takeDirectory, (</>))
-import           System.Posix.Types (Fd)
 
 import           Cardano.Api.Typed (EpochNo)
 import qualified Cardano.Chain.Update as Byron
@@ -46,7 +41,6 @@ import           Cardano.Crypto (RequiresNetworkMagic (..))
 import qualified Cardano.Crypto.Hash as Crypto
 import           Cardano.Node.Protocol.Types (Protocol (..))
 import           Cardano.Tracing.Config (TraceOptions (..), traceConfigParser)
-import           Ouroboros.Network.Block (MaxSlotNo (..))
 
 --TODO: things will probably be clearer if we don't use these newtype wrappers and instead
 -- use records with named fields in the CLI code.
@@ -144,21 +138,6 @@ instance ToJSON NodeHostAddress where
       Just ip -> String (Text.pack (show ip))
       Nothing -> Null
 
-data NodeCLI = NodeCLI
-  { nodeAddr        :: !(Maybe NodeAddress)
-    -- | Filepath of the configuration yaml file. This file determines
-    -- all the configuration settings required for the cardano node
-    -- (logging, tracing, protocol, slot length etc)
-  , configFile      :: !ConfigYamlFilePath
-  , topologyFile    :: !TopologyFile
-  , databaseFile    :: !DbFile
-  , socketFile      :: !(Maybe SocketPath)
-  , protocolFiles   :: !ProtocolFilepaths
-  , validateDB      :: !Bool
-  , shutdownIPC     :: !(Maybe Fd)
-  , shutdownOnSlotSynced :: !MaxSlotNo
-  }
-
 data NodeConfiguration
   = NodeConfiguration
       { -- Protocol-specific parameters:
@@ -177,45 +156,6 @@ data NodeConfiguration
        , ncLogMetrics     :: Bool
        , ncTraceConfig    :: TraceOptions
        } deriving Show
-
-
-{-
-data NodeCLI = NodeCLI
-  {
-  }
-
-data NodeConfiguration
-  = NodeConfiguration
-      {  ncNodeAddr        :: !(Maybe NodeAddress)
-          -- | Filepath of the configuration yaml file. This file determines
-          -- all the configuration settings required for the cardano node
-          -- (logging, tracing, protocol, slot length etc)
-       , ncConfigFile      :: !ConfigYamlFilePath
-       , ncTopologyFile    :: !TopologyFile
-       , ncDatabaseFile    :: !DbFile
-       , ncProtocolFiles   :: !ProtocolFilepaths
-       , ncValidateDB      :: !Bool
-       , ncShutdownIPC     :: !(Maybe Fd)
-       , ncShutdownOnSlotSynced :: !MaxSlotNo
-
-       -- What used to be the NodeConfiguration
-        -- Protocol-specific parameters:
-       , ncProtocolConfig :: NodeProtocolConfiguration
-
-         -- Node parameters, not protocol-specific:
-       , ncSocketPath     :: Maybe SocketPath
-
-         -- BlockFetch configuration
-       , ncMaxConcurrencyBulkSync :: Maybe MaxConcurrencyBulkSync
-       , ncMaxConcurrencyDeadline :: Maybe MaxConcurrencyDeadline
-
-         -- Logging parameters:
-       , ncViewMode       :: ViewMode
-       , ncLoggingSwitch  :: Bool
-       , ncLogMetrics     :: Bool
-       , ncTraceConfig    :: TraceOptions
-       } deriving Show
--}
 
 class AdjustFilePaths a where
   adjustFilePaths :: (FilePath -> FilePath) -> a -> a
@@ -493,15 +433,6 @@ ncProtocol nc =
       NodeProtocolConfigurationByron{}   -> ByronProtocol
       NodeProtocolConfigurationShelley{} -> ShelleyProtocol
       NodeProtocolConfigurationCardano{} -> CardanoProtocol
-
-parseNodeConfiguration :: NodeCLI -> IO NodeConfiguration
-parseNodeConfiguration NodeCLI{configFile} = parseNodeConfigurationFP configFile
-
-parseNodeConfigurationFP :: ConfigYamlFilePath -> IO NodeConfiguration
-parseNodeConfigurationFP (ConfigYamlFilePath fp) = do
-    nc <- decodeFileThrow fp
-    -- Make all the files be relative to the location of the config file.
-    pure $ adjustFilePaths (takeDirectory fp </>) nc
 
 -- | A human readable name for the protocol
 --

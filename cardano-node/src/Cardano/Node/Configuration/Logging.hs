@@ -64,7 +64,8 @@ import           Cardano.BM.Trace (Trace, appendName, traceNamedObject)
 import qualified Cardano.BM.Trace as Trace
 
 import           Cardano.Config.Git.Rev (gitRev)
-import           Cardano.Node.Types
+import           Cardano.Node.Configuration.POM (NodeConfigurationF (..))
+import           Cardano.Node.Types hiding (NodeConfiguration (..))
 
 --------------------------------
 -- Layer
@@ -124,21 +125,18 @@ loggingCLIConfiguration = maybe emptyConfig readConfig
 -- | Create logging feature for `cardano-node`
 createLoggingLayer
   :: Text
-  -> NodeCLI
+  -> NodeConfigurationF
   -> ExceptT ConfigError IO LoggingLayer
-createLoggingLayer ver nodecli@NodeCLI{configFile} = do
-
-  -- TODO:  we shouldn't be parsing configuration multiple times!
-  nodeConfig <- liftIO $ parseNodeConfiguration nodecli
+createLoggingLayer ver nodeConfig' = do
 
   logConfig <- loggingCLIConfiguration $
-    if ncLoggingSwitch nodeConfig
+    if ncLoggingSwitch nodeConfig'
     -- Re-interpret node config again, as logging 'Configuration':
-    then Just $ unConfigPath configFile
+    then Just . unConfigPath $ ncConfigFile nodeConfig'
     else Nothing
 
   -- adapt logging configuration before setup
-  liftIO $ adaptLogConfig nodeConfig logConfig
+  liftIO $ adaptLogConfig nodeConfig' logConfig
 
   -- These have to be set before the switchboard is set up.
   liftIO $ do
@@ -148,19 +146,19 @@ createLoggingLayer ver nodecli@NodeCLI{configFile} = do
   (baseTrace, switchBoard) <- liftIO $ setupTrace_ logConfig "cardano"
 
   let loggingEnabled :: Bool
-      loggingEnabled = ncLoggingSwitch nodeConfig
+      loggingEnabled = ncLoggingSwitch nodeConfig'
       trace :: Trace IO Text
       trace = if loggingEnabled
               then baseTrace
               else Trace.nullTracer
 
   when loggingEnabled $ liftIO $
-    loggingPreInit nodeConfig logConfig switchBoard trace
+    loggingPreInit nodeConfig' logConfig switchBoard trace
 
   pure $ mkLogLayer logConfig switchBoard trace
  where
    loggingPreInit
-     :: NodeConfiguration
+     :: NodeConfigurationF
      -> Configuration
      -> Switchboard Text
      -> Trace IO Text
@@ -190,7 +188,7 @@ createLoggingLayer ver nodecli@NodeCLI{configFile} = do
        -- Record node metrics, if configured
        startCapturingMetrics trace
 
-   adaptLogConfig :: NodeConfiguration -> Configuration -> IO ()
+   adaptLogConfig :: NodeConfigurationF -> Configuration -> IO ()
    adaptLogConfig nodeConfig =
      liveViewdisablesStdout (ncViewMode nodeConfig)
    liveViewdisablesStdout SimpleView _ = pure ()

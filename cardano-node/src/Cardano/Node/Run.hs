@@ -25,6 +25,7 @@ import           Data.Functor.Contravariant (contramap)
 import           Data.Proxy (Proxy (..))
 import           Data.Semigroup ((<>))
 import           Data.Text (Text, breakOn, pack, take, unlines)
+import qualified Data.Text as Text
 import           Data.Version (showVersion)
 import           GHC.Clock (getMonotonicTimeNSec)
 import           Network.HostName (getHostName)
@@ -46,8 +47,11 @@ import           Cardano.BM.Trace
 
 import           Cardano.Config.Git.Rev (gitRev)
 import           Cardano.Node.Configuration.Logging (LoggingLayer (..), Severity (..),
-                     shutdownLoggingLayer)
-import           Cardano.Node.Types
+                     createLoggingLayer, shutdownLoggingLayer)
+import           Cardano.Node.Configuration.POM (NodeConfigurationF (..),
+                     PartialNodeConfiguration (..), defaultPartialNodeConfiguration,
+                     makeNodeConfiguration, parseNodeConfigurationFP)
+import           Cardano.Node.Types hiding (NodeConfiguration (..))
 import           Cardano.Tracing.Config (TraceOptions (..), TraceSelection (..))
 
 import           Ouroboros.Consensus.Block (BlockProtocol)
@@ -88,18 +92,30 @@ import           Cardano.Node.TUI.Run
 {- HLINT ignore "Use fewer imports" -}
 
 runNode
-  :: LoggingLayer
-  -> NodeCLI
+  :: PartialNodeConfiguration
   -> IO ()
-runNode loggingLayer npm@NodeCLI{protocolFiles} = do
+runNode cmd@PartialNodeConfiguration{pncConfigFile} = do
+    configYamlPc <- parseNodeConfigurationFP $ getLast pncConfigFile
+
+    nc <- case makeNodeConfiguration $ cmd <> configYamlPc <> defaultPartialNodeConfiguration of
+            Left err -> panic $ Text.pack err
+            Right nc' -> return nc'
+
+    eLoggingLayer <- runExceptT $ createLoggingLayer
+                     (Text.pack (showVersion version))
+                     nc
+
+    loggingLayer <- case eLoggingLayer of
+                      Left err -> putTextLn (show err) >> exitFailure
+                      Right res -> return res
+
     !trace <- setupTrace loggingLayer
     let tracer = contramap pack $ toLogObject trace
 
-    nc <- parseNodeConfiguration npm
 
     logTracingVerbosity nc tracer
 
-    eitherSomeProtocol <- runExceptT $ mkConsensusProtocol nc (Just protocolFiles)
+    eitherSomeProtocol <- runExceptT $ mkConsensusProtocol nc
 
     SomeConsensusProtocol (p :: Consensus.Protocol IO blk (BlockProtocol blk)) <-
       case eitherSomeProtocol of
@@ -123,7 +139,7 @@ runNode loggingLayer npm@NodeCLI{protocolFiles} = do
     case viewmode of
       SimpleView -> do
         peersThread <- Async.async $ handlePeersListSimple trace nodeKernelData
-        handleSimpleNode p trace tracers npm (setNodeKernel nodeKernelData)
+        handleSimpleNode p trace tracers nc (setNodeKernel nodeKernelData)
         Async.uninterruptibleCancel upTimeThread
         Async.uninterruptibleCancel peersThread
 
@@ -141,11 +157,11 @@ runNode loggingLayer npm@NodeCLI{protocolFiles} = do
         be :: LiveViewBackend blk Text <- realize c
         let lvbe = MkBackend { bEffectuate = effectuate be, bUnrealize = unrealize be }
         llAddBackend loggingLayer lvbe (UserDefinedBK "LiveViewBackend")
-        liveViewPostSetup be npm nc
+        liveViewPostSetup be nc
         captureCounters be trace
 
         -- User will see a terminal graphics and will be able to interact with it.
-        nodeThread <- Async.async $ handleSimpleNode p trace tracers npm
+        nodeThread <- Async.async $ handleSimpleNode p trace tracers nc
                        (setNodeKernel nodeKernelData)
         setNodeThread be nodeThread
 
@@ -160,7 +176,7 @@ runNode loggingLayer npm@NodeCLI{protocolFiles} = do
 #endif
     shutdownLoggingLayer loggingLayer
 
-logTracingVerbosity :: NodeConfiguration -> Tracer IO String -> IO ()
+logTracingVerbosity :: NodeConfigurationF -> Tracer IO String -> IO ()
 logTracingVerbosity nc tracer =
   case ncTraceConfig nc of
     TracingOff -> return ()
@@ -235,29 +251,26 @@ handleSimpleNode
   => Consensus.Protocol IO blk (BlockProtocol blk)
   -> Trace IO Text
   -> Tracers RemoteConnectionId LocalConnectionId blk
-  -> NodeCLI
+  -> NodeConfigurationF
   -> (NodeKernel IO RemoteConnectionId LocalConnectionId blk -> IO ())
   -- ^ Called on the 'NodeKernel' after creating it, but before the network
   -- layer is initialised.  This implies this function must not block,
   -- otherwise the node won't actually start.
   -> IO ()
-handleSimpleNode p trace nodeTracers npm onKernel = do
+handleSimpleNode p trace nodeTracers nc onKernel = do
 
   let pInfo@ProtocolInfo{ pInfoConfig = cfg } = Consensus.protocolInfo p
       tracer = toLogObject trace
 
-  -- Node configuration
-  nc <- parseNodeConfiguration npm
-
-  createTracers npm nc trace tracer cfg
+  createTracers nc trace tracer cfg
 
   (publicSocketsOrAddrs,
    localSocketOrPath) <- either throwIO return =<<
-                           runExceptT (gatherConfiguredSockets nc npm)
+                           runExceptT (gatherConfiguredSockets nc)
 
-  dbPath <- canonDbPath npm
+  dbPath <- canonDbPath nc
 
-  eitherTopology <- readTopologyFile npm
+  eitherTopology <- readTopologyFile nc
 
   nt <- either (\err -> panic $ "Cardano.Node.Run.handleSimpleNode.readTopologyFile: " <> err) pure eitherTopology
 
@@ -273,7 +286,7 @@ handleSimpleNode p trace nodeTracers npm onKernel = do
       ipProducers = ipSubscriptionTargets ipProducerAddrs
       (dnsProducerAddrs, ipProducerAddrs) = producerAddresses nt
 
-  withShutdownHandling npm trace $ \sfds ->
+  withShutdownHandling nc trace $ \sfds ->
    Node.run
      RunNodeArgs {
        rnTraceConsensus       = consensusTracers nodeTracers,
@@ -285,13 +298,13 @@ handleSimpleNode p trace nodeTracers npm onKernel = do
        rnNetworkMagic         = getNetworkMagic (Consensus.configBlock cfg),
        rnDatabasePath         = dbPath,
        rnProtocolInfo         = pInfo,
-       rnCustomiseChainDbArgs = customiseChainDbArgs $ validateDB npm,
+       rnCustomiseChainDbArgs = customiseChainDbArgs $ ncValidateDB nc,
        rnCustomiseNodeArgs    = customiseNodeArgs (ncMaxConcurrencyBulkSync nc)
                                   (ncMaxConcurrencyDeadline nc),
        rnNodeToNodeVersions   = supportedNodeToNodeVersions (Proxy @blk),
        rnNodeToClientVersions = supportedNodeToClientVersions (Proxy @blk),
        rnNodeKernelHook       = \registry nodeKernel -> do
-         maybeSpawnOnSlotSyncedShutdownHandler npm sfds trace registry
+         maybeSpawnOnSlotSyncedShutdownHandler nc sfds trace registry
            (Node.getChainDB nodeKernel)
          onKernel nodeKernel,
        rnMaxClockSkew         = defaultClockSkew
@@ -338,15 +351,14 @@ handleSimpleNode p trace nodeTracers npm onKernel = do
     }
 
   createTracers
-    :: NodeCLI
-    -> NodeConfiguration
+    :: NodeConfigurationF
     -> Trace IO Text
     -> Tracer IO Text
     -> Consensus.TopLevelConfig blk
     -> IO ()
-  createTracers npm'@NodeCLI{nodeAddr, validateDB}
-                nc tr tracer cfg = do
-         eitherTopology <- readTopologyFile npm'
+  createTracers ncf@NodeConfigurationF{ncNodeAddr, ncValidateDB}
+                tr tracer cfg = do
+         eitherTopology <- readTopologyFile ncf
          nt <- either
                  (\err -> panic $ "Cardano.Node.Run.createTracers.readTopologyFile: " <> err)
                  pure
@@ -360,7 +372,7 @@ handleSimpleNode p trace nodeTracers npm onKernel = do
          traceWith tracer $ unlines
            [ ""
            , "**************************************"
-           , "Host node address: " <> show nodeAddr
+           , "Host node address: " <> show ncNodeAddr
            , "My DNS producers are " <> show dnsProducerAddrs
            , "My IP producers are " <> show ipProducerAddrs
            , "**************************************"
@@ -371,19 +383,19 @@ handleSimpleNode p trace nodeTracers npm onKernel = do
              nTr = appendName "networkMagic" tr
              vTr = appendName "version" tr
              cTr = appendName "commit"  tr
-         traceNamedObject rTr (meta, LogMessage (show (ncProtocol nc)))
+         traceNamedObject rTr (meta, LogMessage ("THIS SHOULD BE THE PROTOCOL")) --TODO: Fix me
          traceNamedObject nTr (meta, LogMessage ("NetworkMagic " <> show (unNetworkMagic . getNetworkMagic $ Consensus.configBlock cfg)))
          traceNamedObject vTr (meta, LogMessage . pack . showVersion $ version)
          traceNamedObject cTr (meta, LogMessage gitRev)
 
-         when validateDB $ traceWith tracer "Performing DB validation"
+         when ncValidateDB $ traceWith tracer "Performing DB validation"
 
 --------------------------------------------------------------------------------
 -- Helper functions
 --------------------------------------------------------------------------------
 
-canonDbPath :: NodeCLI -> IO FilePath
-canonDbPath NodeCLI{databaseFile = DbFile dbFp} =
+canonDbPath :: NodeConfigurationF -> IO FilePath
+canonDbPath NodeConfigurationF{ncDatabaseFile = DbFile dbFp} =
   canonicalizePath =<< makeAbsolute dbFp
 
 createDiffusionArguments

@@ -37,9 +37,9 @@ main = do
                  , caNetworkMagic
                  } <- execParser opts
 
-    nc <- liftIO $ parseNodeConfigurationFP caConfigYaml
+    --nc <- liftIO $ parseNodeConfigurationFP caConfigYaml
 
-    let someNodeClientProtocol = mkNodeClientProtocol $ ncProtocol nc
+    let someNodeClientProtocol = mkNodeClientProtocol $ ncProtocol (panic $ show caConfigYaml)
 
     chairmanTest
       stdoutTracer

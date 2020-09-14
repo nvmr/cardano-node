@@ -17,7 +17,8 @@ import           Control.Monad.Trans.Except.Extra (handleIOExceptT)
 import           Network.Socket (AddrInfo (..), AddrInfoFlag (..), Socket, SocketType (..),
                      defaultHints, getAddrInfo)
 
-import           Cardano.Node.Types
+import           Cardano.Node.Configuration.POM (NodeConfigurationF (..))
+import           Cardano.Node.Types hiding (NodeConfiguration (..))
 
 #if defined(mingw32_HOST_OS)
 #else
@@ -90,19 +91,18 @@ renderSocketConfigError (GetAddrInfoError addr ex) =
 -- * node cli
 -- * systemd socket activation
 --
-gatherConfiguredSockets :: NodeConfiguration
-                        -> NodeCLI
+gatherConfiguredSockets :: NodeConfigurationF
                         -> ExceptT SocketConfigError IO
                                    (SocketOrSocketInfo [Socket] [AddrInfo],
                                     SocketOrSocketInfo Socket SocketPath)
-gatherConfiguredSockets config cli = do
+gatherConfiguredSockets config = do
 
     mbAllSocketsFromSystemD          <- liftIO getSystemdSockets
 
     -- Select the sockets or address for public node-to-node comms
     --
     let mbPublicSocketsAddrFromConfigOrCLI :: Maybe NodeAddress
-        mbPublicSocketsAddrFromConfigOrCLI = nodeAddr cli
+        mbPublicSocketsAddrFromConfigOrCLI = ncNodeAddr config
                                              --TODO: add config file support
         mbPublicSocketsFromSystemD         = snd <$> mbAllSocketsFromSystemD
 
@@ -117,11 +117,10 @@ gatherConfiguredSockets config cli = do
 
     -- Select the socket or path for local node-to-client comms
     --
-    let mbLocalSocketFileConfigOrCLI  = socketFile cli `mplus`
-                                        ncSocketPath config
+    let mbLocalSocketFileConfig       = ncSocketPath config
         mbLocalSocketFromSystemD      = fst <$> mbAllSocketsFromSystemD
 
-    local  <- case (mbLocalSocketFileConfigOrCLI,
+    local  <- case (mbLocalSocketFileConfig,
                     mbLocalSocketFromSystemD) of
                 (Nothing, Just sock) -> return (ActualSocket sock)
                 (Just path, Nothing) -> do removeStaleLocalSocket path
