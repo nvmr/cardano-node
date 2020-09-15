@@ -42,8 +42,7 @@ main = do
 
     partialNc <- liftIO . parseNodeConfigurationFP $ Just caConfigYaml
 
-    nc <- case makeNodeConfiguration partialNc of --TODO: Create a makeChairmanConfiguration function as
-                                                  -- we don;t need much config vs a full node
+    nc <- case makeNodeConfiguration partialNc of
             Left err -> panic $ Text.pack err
             Right nc' -> return nc'
 
