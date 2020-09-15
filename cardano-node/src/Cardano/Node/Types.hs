@@ -8,7 +8,6 @@ module Cardano.Node.Types
   , ConfigYamlFilePath(..)
   , DbFile(..)
   , GenesisFile(..)
-  , NodeConfiguration(..)
   , ProtocolFilepaths (..)
   , GenesisHash(..)
   , MaxConcurrencyBulkSync(..)
@@ -22,14 +21,12 @@ module Cardano.Node.Types
   , SocketPath(..)
   , TopologyFile(..)
   , ViewMode(..)
-  , ncProtocol
   , protocolName
   ) where
 
 import           Cardano.Prelude
 import           Prelude (String)
 
-import           Control.Monad (fail)
 import           Data.Aeson
 import           Data.IP (IP)
 import qualified Data.Text as Text
@@ -40,8 +37,6 @@ import qualified Cardano.Chain.Update as Byron
 import           Cardano.Crypto (RequiresNetworkMagic (..))
 import qualified Cardano.Crypto.Hash as Crypto
 import           Cardano.Node.Protocol.Types (Protocol (..))
-import           Cardano.Tracing.Config (TraceOptions (..), traceConfigParser)
-
 --TODO: things will probably be clearer if we don't use these newtype wrappers and instead
 -- use records with named fields in the CLI code.
 
@@ -138,152 +133,9 @@ instance ToJSON NodeHostAddress where
       Just ip -> String (Text.pack (show ip))
       Nothing -> Null
 
-data NodeConfiguration
-  = NodeConfiguration
-      { -- Protocol-specific parameters:
-         ncProtocolConfig :: NodeProtocolConfiguration
-
-         -- Node parameters, not protocol-specific:
-       , ncSocketPath     :: Maybe SocketPath
-
-         -- BlockFetch configuration
-       , ncMaxConcurrencyBulkSync :: Maybe MaxConcurrencyBulkSync
-       , ncMaxConcurrencyDeadline :: Maybe MaxConcurrencyDeadline
-
-         -- Logging parameters:
-       , ncViewMode       :: ViewMode
-       , ncLoggingSwitch  :: Bool
-       , ncLogMetrics     :: Bool
-       , ncTraceConfig    :: TraceOptions
-       } deriving Show
-
 class AdjustFilePaths a where
   adjustFilePaths :: (FilePath -> FilePath) -> a -> a
 
-instance AdjustFilePaths NodeConfiguration where
-  adjustFilePaths f x@NodeConfiguration {
-                        ncProtocolConfig,
-                        ncSocketPath
-                      } =
-    x {
-      ncProtocolConfig = adjustFilePaths f ncProtocolConfig,
-      ncSocketPath     = adjustFilePaths f ncSocketPath
-    }
-
-instance FromJSON NodeConfiguration where
-  parseJSON =
-    withObject "NodeConfiguration" $ \v -> do
-
-      -- Node parameters, not protocol-specific
-      ncSocketPath <- v .:? "SocketPath"
-
-      -- Blockfetch parameters
-      ncMaxConcurrencyBulkSync <- v .:? "MaxConcurrencyBulkSync"
-      ncMaxConcurrencyDeadline <- v .:? "MaxConcurrencyDeadline"
-
-      -- Logging parameters
-      ncViewMode      <- v .:? "ViewMode"         .!= SimpleView
-      ncLoggingSwitch <- v .:? "TurnOnLogging"    .!= True
-      ncLogMetrics    <- v .:? "TurnOnLogMetrics" .!= True
-      ncTraceConfig   <- if ncLoggingSwitch
-                           then traceConfigParser v
-                           else return TracingOff
-
-      -- Protocol parameters
-      protocol <- v .: "Protocol" .!= ByronProtocol
-      ncProtocolConfig <-
-        case protocol of
-          ByronProtocol ->
-            NodeProtocolConfigurationByron <$> parseByronProtocol v
-
-          ShelleyProtocol ->
-            NodeProtocolConfigurationShelley <$> parseShelleyProtocol v
-
-          CardanoProtocol ->
-            NodeProtocolConfigurationCardano <$> parseByronProtocol v
-                                             <*> parseShelleyProtocol v
-                                             <*> parseHardForkProtocol v
-      pure NodeConfiguration {
-             ncProtocolConfig
-           , ncSocketPath
-           , ncMaxConcurrencyBulkSync
-           , ncMaxConcurrencyDeadline
-           , ncViewMode
-           , ncLoggingSwitch
-           , ncLogMetrics
-           , ncTraceConfig
-           }
-    where
-      parseByronProtocol v = do
-        primary   <- v .:? "ByronGenesisFile"
-        secondary <- v .:? "GenesisFile"
-        npcByronGenesisFile <-
-          case (primary, secondary) of
-            (Just g, Nothing)  -> return g
-            (Nothing, Just g)  -> return g
-            (Nothing, Nothing) -> fail $ "Missing required field, either "
-                                      ++ "ByronGenesisFile or GenesisFile"
-            (Just _, Just _)   -> fail $ "Specify either ByronGenesisFile"
-                                      ++ "or GenesisFile, but not both"
-        npcByronGenesisFileHash <- v .:? "ByronGenesisHash"
-
-        npcByronReqNetworkMagic     <- v .:? "RequiresNetworkMagic"
-                                         .!= RequiresNoMagic
-        npcByronPbftSignatureThresh <- v .:? "PBftSignatureThreshold"
-        npcByronApplicationName     <- v .:? "ApplicationName"
-                                         .!= Byron.ApplicationName "cardano-sl"
-        npcByronApplicationVersion  <- v .:? "ApplicationVersion" .!= 1
-        protVerMajor                <- v .: "LastKnownBlockVersion-Major"
-        protVerMinor                <- v .: "LastKnownBlockVersion-Minor"
-        protVerAlt                  <- v .: "LastKnownBlockVersion-Alt" .!= 0
-
-        pure NodeByronProtocolConfiguration {
-               npcByronGenesisFile
-             , npcByronGenesisFileHash
-             , npcByronReqNetworkMagic
-             , npcByronPbftSignatureThresh
-             , npcByronApplicationName
-             , npcByronApplicationVersion
-             , npcByronSupportedProtocolVersionMajor = protVerMajor
-             , npcByronSupportedProtocolVersionMinor = protVerMinor
-             , npcByronSupportedProtocolVersionAlt   = protVerAlt
-             }
-
-      parseShelleyProtocol v = do
-        primary   <- v .:? "ShelleyGenesisFile"
-        secondary <- v .:? "GenesisFile"
-        npcShelleyGenesisFile <-
-          case (primary, secondary) of
-            (Just g, Nothing)  -> return g
-            (Nothing, Just g)  -> return g
-            (Nothing, Nothing) -> fail $ "Missing required field, either "
-                                      ++ "ShelleyGenesisFile or GenesisFile"
-            (Just _, Just _)   -> fail $ "Specify either ShelleyGenesisFile"
-                                      ++ "or GenesisFile, but not both"
-        npcShelleyGenesisFileHash <- v .:? "ShelleyGenesisHash"
-
-        --TODO: these are silly names, allow better aliases:
-        protVerMajor    <- v .:  "LastKnownBlockVersion-Major"
-        protVerMinor    <- v .:  "LastKnownBlockVersion-Minor"
-        protVerMajroMax <- v .:? "MaxKnownMajorProtocolVersion" .!= 1
-
-        pure NodeShelleyProtocolConfiguration {
-               npcShelleyGenesisFile
-             , npcShelleyGenesisFileHash
-             , npcShelleySupportedProtocolVersionMajor = protVerMajor
-             , npcShelleySupportedProtocolVersionMinor = protVerMinor
-             , npcShelleyMaxSupportedProtocolVersion   = protVerMajroMax
-             }
-
-      parseHardForkProtocol v = do
-        npcTestShelleyHardForkAtEpoch   <- v .:? "TestShelleyHardForkAtEpoch"
-        npcTestShelleyHardForkAtVersion <- v .:? "TestShelleyHardForkAtVersion"
-        npcShelleyHardForkNotBeforeEpoch <- v .:? "ShelleyHardForkNotBeforeEpoch"
-        pure NodeHardForkProtocolConfiguration {
-               npcTestShelleyHardForkAtEpoch,
-               npcTestShelleyHardForkAtVersion,
-               npcShelleyHardForkNotBeforeEpoch
-             }
 
 data ProtocolFilepaths =
      ProtocolFilepaths {
@@ -427,12 +279,6 @@ instance AdjustFilePaths GenesisFile where
 instance AdjustFilePaths a => AdjustFilePaths (Maybe a) where
   adjustFilePaths f = fmap (adjustFilePaths f)
 
-ncProtocol :: NodeConfiguration -> Protocol
-ncProtocol nc =
-    case ncProtocolConfig nc of
-      NodeProtocolConfigurationByron{}   -> ByronProtocol
-      NodeProtocolConfigurationShelley{} -> ShelleyProtocol
-      NodeProtocolConfigurationCardano{} -> CardanoProtocol
 
 -- | A human readable name for the protocol
 --

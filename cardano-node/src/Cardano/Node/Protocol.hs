@@ -13,7 +13,7 @@ import           Control.Monad.Trans.Except (ExceptT)
 import           Control.Monad.Trans.Except.Extra (firstExceptT)
 
 import           Cardano.Node.Configuration.POM (NodeConfigurationF (..))
-import           Cardano.Node.Types hiding (NodeConfiguration (..))
+import           Cardano.Node.Types
 
 import           Cardano.Node.Protocol.Byron
 import           Cardano.Node.Protocol.Cardano

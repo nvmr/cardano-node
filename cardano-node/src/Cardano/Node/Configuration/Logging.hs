@@ -65,7 +65,7 @@ import qualified Cardano.BM.Trace as Trace
 
 import           Cardano.Config.Git.Rev (gitRev)
 import           Cardano.Node.Configuration.POM (NodeConfigurationF (..))
-import           Cardano.Node.Types hiding (NodeConfiguration (..))
+import           Cardano.Node.Types
 
 --------------------------------
 -- Layer

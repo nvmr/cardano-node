@@ -51,7 +51,7 @@ import           Cardano.Node.Configuration.Logging (LoggingLayer (..), Severity
 import           Cardano.Node.Configuration.POM (NodeConfigurationF (..),
                      PartialNodeConfiguration (..), defaultPartialNodeConfiguration,
                      makeNodeConfiguration, parseNodeConfigurationFP)
-import           Cardano.Node.Types hiding (NodeConfiguration (..))
+import           Cardano.Node.Types
 import           Cardano.Tracing.Config (TraceOptions (..), TraceSelection (..))
 
 import           Ouroboros.Consensus.Block (BlockProtocol)

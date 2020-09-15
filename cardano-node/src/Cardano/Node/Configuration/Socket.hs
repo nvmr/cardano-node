@@ -18,7 +18,7 @@ import           Network.Socket (AddrInfo (..), AddrInfoFlag (..), Socket, Socke
                      defaultHints, getAddrInfo)
 
 import           Cardano.Node.Configuration.POM (NodeConfigurationF (..))
-import           Cardano.Node.Types hiding (NodeConfiguration (..))
+import           Cardano.Node.Types
 
 #if defined(mingw32_HOST_OS)
 #else

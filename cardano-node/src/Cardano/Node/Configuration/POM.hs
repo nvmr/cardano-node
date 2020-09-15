@@ -12,6 +12,7 @@ module Cardano.Node.Configuration.POM
   , defaultPartialNodeConfiguration
   , lastOption
   , makeNodeConfiguration
+  , ncProtocol
   , parseNodeConfigurationFP
   )
 where
@@ -32,7 +33,7 @@ import           System.Posix.Types (Fd (..))
 import qualified Cardano.Chain.Update as Byron
 import           Cardano.Crypto (RequiresNetworkMagic (..))
 import           Cardano.Node.Protocol.Types (Protocol (..))
-import           Cardano.Node.Types hiding (NodeConfiguration (..))
+import           Cardano.Node.Types
 import           Cardano.Tracing.Config
 import           Ouroboros.Network.Block (MaxSlotNo (..))
 
@@ -322,6 +323,14 @@ makeNodeConfiguration pnc = do
              , ncLogMetrics = logMetrics
              , ncTraceConfig = traceConfig
              }
+
+ncProtocol :: NodeConfigurationF -> Protocol
+ncProtocol nc =
+    case ncProtocolConfig nc of
+      NodeProtocolConfigurationByron{}   -> ByronProtocol
+      NodeProtocolConfigurationShelley{} -> ShelleyProtocol
+      NodeProtocolConfigurationCardano{} -> CardanoProtocol
+
 
 parseNodeConfigurationFP :: Maybe ConfigYamlFilePath -> IO PartialNodeConfiguration
 parseNodeConfigurationFP Nothing = panic "No configuration yaml filepath provided"
