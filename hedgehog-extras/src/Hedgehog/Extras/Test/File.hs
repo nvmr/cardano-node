@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeApplications #-}
 
-module Chairman.Hedgehog.File
+module Hedgehog.Extras.Test.File
   ( createDirectoryIfMissing
   , copyFile
   , renameFile
@@ -19,10 +19,12 @@ module Chairman.Hedgehog.File
   , cat
 
   , assertIsJsonFile
+  , assertFilesExist
+  , assertFileOccurences
+  , assertFileLines
+  , assertEndsWithSingleNewline
   ) where
 
-import           Chairman.Monad
-import           Chairman.OS
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.Aeson
@@ -30,18 +32,22 @@ import           Data.Bool
 import           Data.Either
 import           Data.Function
 import           Data.Functor
+import           Data.Int
+import           Data.Maybe
 import           Data.Semigroup
-import           Data.String
+import           Data.String (String)
 import           GHC.Stack (HasCallStack)
 import           Hedgehog (MonadTest)
+import           Hedgehog.Extras.Stock.Monad
+import           Hedgehog.Extras.Stock.OS
 import           System.IO (FilePath, Handle, IOMode)
 import           Text.Show
 
-import qualified Chairman.Hedgehog.Base as H
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.List as L
 import qualified GHC.Stack as GHC
 import qualified Hedgehog as H
+import qualified Hedgehog.Extras.Test.Base as H
 import qualified System.Directory as IO
 import qualified System.IO as IO
 
@@ -139,3 +145,43 @@ assertIsJsonFile fp = GHC.withFrozenCallStack $ do
   case jsonResult of
     Right _ -> return ()
     Left msg -> H.failMessage GHC.callStack msg
+
+-- | Checks if all files gives exists. If this fails, all files are deleted.
+assertFilesExist :: (MonadTest m, MonadIO m, HasCallStack) => [FilePath] -> m ()
+assertFilesExist [] = return ()
+assertFilesExist (file:rest) = do
+  exists <- H.evalIO $ IO.doesFileExist file
+  if exists
+    then GHC.withFrozenCallStack $ assertFilesExist rest
+    else H.failWithCustom GHC.callStack Nothing (file <> " has not been successfully created.")
+
+-- | Assert the file contains the given number of occurrences of the given string
+assertFileOccurences :: (MonadTest m, MonadIO m, HasCallStack) => Int -> String -> FilePath -> m ()
+assertFileOccurences n s fp = GHC.withFrozenCallStack $ do
+  contents <- readFile fp
+
+  L.length (L.filter (s `L.isInfixOf`) (L.lines contents)) H.=== n
+
+-- | Assert the file contains the given number of occurrences of the given string
+assertFileLines :: (MonadTest m, MonadIO m, HasCallStack) => (Int -> Bool) -> FilePath -> m ()
+assertFileLines p fp = GHC.withFrozenCallStack $ do
+  contents <- readFile fp
+
+  let lines = L.lines contents
+
+  let len = case L.reverse lines of
+        "":xs -> L.length xs
+        xs -> L.length xs
+
+  unless (p len) $ do
+    H.failWithCustom GHC.callStack Nothing (fp <> " has an unexpected number of lines")
+
+-- | Assert the file contains the given number of occurrences of the given string
+assertEndsWithSingleNewline :: (MonadTest m, MonadIO m, HasCallStack) => FilePath -> m ()
+assertEndsWithSingleNewline fp = GHC.withFrozenCallStack $ do
+  contents <- readFile fp
+
+  case L.reverse contents of
+    '\n':'\n':_ -> H.failWithCustom GHC.callStack Nothing (fp <> " ends with too many newlines.")
+    '\n':_ -> return ()
+    _ -> H.failWithCustom GHC.callStack Nothing (fp <> " must end with newline.")
