@@ -12,7 +12,7 @@ import           Cardano.Prelude
 import           Control.Monad.Trans.Except (ExceptT)
 import           Control.Monad.Trans.Except.Extra (firstExceptT)
 
-import           Cardano.Node.Configuration.POM (NodeConfigurationF (..))
+import           Cardano.Node.Configuration.POM (NodeConfiguration (..))
 import           Cardano.Node.Types
 
 import           Cardano.Node.Protocol.Byron
@@ -25,9 +25,9 @@ import           Cardano.Node.Protocol.Types (SomeConsensusProtocol (..))
 --
 
 mkConsensusProtocol
-  :: NodeConfigurationF
+  :: NodeConfiguration
   -> ExceptT ProtocolInstantiationError IO SomeConsensusProtocol
-mkConsensusProtocol NodeConfigurationF{ncProtocolConfig, ncProtocolFiles} =
+mkConsensusProtocol NodeConfiguration{ncProtocolConfig, ncProtocolFiles} =
     case ncProtocolConfig of
 
       NodeProtocolConfigurationByron config ->

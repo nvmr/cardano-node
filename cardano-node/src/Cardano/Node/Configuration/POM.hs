@@ -7,7 +7,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-} -- TODO: REMOVE ME
 
 module Cardano.Node.Configuration.POM
-  ( NodeConfigurationF (..)
+  ( NodeConfiguration (..)
   , PartialNodeConfiguration(..)
   , defaultPartialNodeConfiguration
   , lastOption
@@ -37,8 +37,8 @@ import           Cardano.Node.Types
 import           Cardano.Tracing.Config
 import           Ouroboros.Network.Block (MaxSlotNo (..))
 
-data NodeConfigurationF
-  = NodeConfigurationF
+data NodeConfiguration
+  = NodeConfiguration
       {  ncNodeAddr        :: !(Maybe NodeAddress)
           -- | Filepath of the configuration yaml file. This file determines
           -- all the configuration settings required for the cardano node
@@ -94,8 +94,8 @@ data PartialNodeConfiguration
        , pncSocketPath     :: !(Last SocketPath)
 
          -- BlockFetch configuration
-       , pncMaxConcurrencyBulkSync :: !(Last (Maybe MaxConcurrencyBulkSync))
-       , pncMaxConcurrencyDeadline :: !(Last (Maybe MaxConcurrencyDeadline))
+       , pncMaxConcurrencyBulkSync :: !(Last MaxConcurrencyBulkSync)
+       , pncMaxConcurrencyDeadline :: !(Last MaxConcurrencyDeadline)
 
          -- Logging parameters:
        , pncViewMode       :: !(Last ViewMode)
@@ -273,10 +273,16 @@ instance FromJSON PartialNodeConfiguration where
                npcTestShelleyHardForkAtVersion,
                npcShelleyHardForkNotBeforeEpoch
              }
+
+-- Default configuration is mainnet
 defaultPartialNodeConfiguration :: PartialNodeConfiguration
 defaultPartialNodeConfiguration = mempty
-                                    { pncViewMode = Last $ Just SimpleView
+                                    { pncConfigFile = Last . Just $ ConfigYamlFilePath "configuration/cardano/mainnet-config.json"
+                                    , pncDatabaseFile = Last . Just $ DbFile "mainnet/db/"
                                     , pncLoggingSwitch = Last $ Just True
+                                    , pncSocketPath = Last $ Just "mainnet/socket/nodesocket"
+                                    , pncTopologyFile = Last . Just $ TopologyFile "configuration/cardano/mainnet-topology.json"
+                                    , pncViewMode = Last $ Just SimpleView
                                     }
 
 lastOption :: Parser a -> Parser (Last a)
@@ -285,27 +291,21 @@ lastOption parser = fmap Last $ optional parser
 lastToEither :: String -> Last a -> Either String a
 lastToEither errMsg (Last x) = maybe (Left errMsg) Right x
 
-makeNodeConfiguration :: PartialNodeConfiguration -> Either String NodeConfigurationF
+makeNodeConfiguration :: PartialNodeConfiguration -> Either String NodeConfiguration
 makeNodeConfiguration pnc = do
-  configFile <- lastToEither "Missing ConfigFile" $ pncConfigFile pnc
+  configFile <- lastToEither "Missing YAML config file" $ pncConfigFile pnc
   topologyFile <- lastToEither "Missing TopologyFile" $ pncTopologyFile pnc
   databaseFile <- lastToEither "Missing DatabaseFile" $ pncDatabaseFile pnc
---  socketFile <- lastToEither "Missing SocketFile" $ pncSocketFile pnc
   protocolFiles <- lastToEither "Missing ProtocolFiles" $ pncProtocolFiles pnc
   validateDB <- lastToEither "Missing ValidateDB" $ pncValidateDB pnc
   shutdownIPC <- lastToEither "Missing ShutdownIPC" $ pncShutdownIPC pnc
   shutdownOnSlotSynced <- lastToEither "Missing ShutdownOnSlotSynced" $ pncShutdownOnSlotSynced pnc
-
---pncSocketPath
-
   protocolConfig <- lastToEither "Missing ProtocolConfig" $ pncProtocolConfig pnc
-  maxConcurrencyBulkSync <- lastToEither "Missing MaxConcurrencyBulkSync" $ pncMaxConcurrencyBulkSync pnc
-  maxConcurrencyDeadline <- lastToEither "Missing MaxConcurrencyDeadline" $ pncMaxConcurrencyDeadline pnc
   viewMode <- lastToEither "Missing ViewMode" $ pncViewMode pnc
   loggingSwitch <- lastToEither "Missing LoggingSwitch" $ pncLoggingSwitch pnc
   logMetrics <- lastToEither "Missing LogMetrics" $ pncLogMetrics pnc
   traceConfig <- lastToEither "Missing TraceConfig" $ pncTraceConfig pnc
-  return $ NodeConfigurationF
+  return $ NodeConfiguration
              { ncNodeAddr = getLast $ pncNodeAddr pnc
              , ncConfigFile = configFile
              , ncTopologyFile = topologyFile
@@ -316,15 +316,15 @@ makeNodeConfiguration pnc = do
              , ncShutdownOnSlotSynced = shutdownOnSlotSynced
              , ncProtocolConfig = protocolConfig
              , ncSocketPath = getLast $ pncSocketPath pnc
-             , ncMaxConcurrencyBulkSync = maxConcurrencyBulkSync
-             , ncMaxConcurrencyDeadline = maxConcurrencyDeadline
+             , ncMaxConcurrencyBulkSync = getLast $ pncMaxConcurrencyBulkSync pnc
+             , ncMaxConcurrencyDeadline = getLast $ pncMaxConcurrencyDeadline pnc
              , ncViewMode = viewMode
              , ncLoggingSwitch = loggingSwitch
              , ncLogMetrics = logMetrics
              , ncTraceConfig = traceConfig
              }
 
-ncProtocol :: NodeConfigurationF -> Protocol
+ncProtocol :: NodeConfiguration -> Protocol
 ncProtocol nc =
     case ncProtocolConfig nc of
       NodeProtocolConfigurationByron{}   -> ByronProtocol
@@ -333,7 +333,7 @@ ncProtocol nc =
 
 
 parseNodeConfigurationFP :: Maybe ConfigYamlFilePath -> IO PartialNodeConfiguration
-parseNodeConfigurationFP Nothing = panic "No configuration yaml filepath provided"
+parseNodeConfigurationFP Nothing = parseNodeConfigurationFP . getLast $ pncConfigFile defaultPartialNodeConfiguration
 parseNodeConfigurationFP (Just (ConfigYamlFilePath fp)) = do
     nc <- decodeFileThrow fp
     -- Make all the files be relative to the location of the config file.

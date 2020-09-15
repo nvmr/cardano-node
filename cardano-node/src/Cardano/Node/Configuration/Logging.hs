@@ -64,7 +64,7 @@ import           Cardano.BM.Trace (Trace, appendName, traceNamedObject)
 import qualified Cardano.BM.Trace as Trace
 
 import           Cardano.Config.Git.Rev (gitRev)
-import           Cardano.Node.Configuration.POM (NodeConfigurationF (..))
+import           Cardano.Node.Configuration.POM (NodeConfiguration (..))
 import           Cardano.Node.Types
 
 --------------------------------
@@ -125,7 +125,7 @@ loggingCLIConfiguration = maybe emptyConfig readConfig
 -- | Create logging feature for `cardano-node`
 createLoggingLayer
   :: Text
-  -> NodeConfigurationF
+  -> NodeConfiguration
   -> ExceptT ConfigError IO LoggingLayer
 createLoggingLayer ver nodeConfig' = do
 
@@ -158,7 +158,7 @@ createLoggingLayer ver nodeConfig' = do
   pure $ mkLogLayer logConfig switchBoard trace
  where
    loggingPreInit
-     :: NodeConfigurationF
+     :: NodeConfiguration
      -> Configuration
      -> Switchboard Text
      -> Trace IO Text
@@ -188,7 +188,7 @@ createLoggingLayer ver nodeConfig' = do
        -- Record node metrics, if configured
        startCapturingMetrics trace
 
-   adaptLogConfig :: NodeConfigurationF -> Configuration -> IO ()
+   adaptLogConfig :: NodeConfiguration -> Configuration -> IO ()
    adaptLogConfig nodeConfig =
      liveViewdisablesStdout (ncViewMode nodeConfig)
    liveViewdisablesStdout SimpleView _ = pure ()

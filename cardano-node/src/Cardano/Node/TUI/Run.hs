@@ -34,17 +34,17 @@ import           Cardano.Node.TUI.Drawing (LiveViewState (..), LiveViewThread (.
 import           Cardano.Node.TUI.EventHandler (LiveViewBackend (..))
 import           Cardano.Tracing.Peer (Peer (..))
 
-import           Cardano.Node.Configuration.POM (NodeConfigurationF (..))
+import           Cardano.Node.Configuration.POM (NodeConfiguration (..), ncProtocol)
 import           Cardano.Node.Types
 
 -- | Change a few fields in the LiveViewState after it has been initialized above.
-liveViewPostSetup :: NFData a => LiveViewBackend blk a -> NodeConfigurationF-> IO ()
+liveViewPostSetup :: NFData a => LiveViewBackend blk a -> NodeConfiguration-> IO ()
 liveViewPostSetup lvbe nc = do
     modifyMVar_ (getbe lvbe) $ \lvs ->
       pure lvs
             { lvsNodeId = nodeId
-            , lvsProtocol = panic "NEED PROTOCOL HERE" --TODO: FIX ME --ncProtocol nc
-            , lvsRelease = "NEED PROTOCOL NAME HERE" --TODO: FIX ME protocolName (ncProtocol nc)
+            , lvsProtocol = ncProtocol nc
+            , lvsRelease = protocolName (ncProtocol nc)
             }
  where
     --TODO: this is meaningless. Nodes do not have ids. The port number is not

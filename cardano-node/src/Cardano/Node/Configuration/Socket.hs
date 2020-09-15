@@ -17,7 +17,7 @@ import           Control.Monad.Trans.Except.Extra (handleIOExceptT)
 import           Network.Socket (AddrInfo (..), AddrInfoFlag (..), Socket, SocketType (..),
                      defaultHints, getAddrInfo)
 
-import           Cardano.Node.Configuration.POM (NodeConfigurationF (..))
+import           Cardano.Node.Configuration.POM (NodeConfiguration (..))
 import           Cardano.Node.Types
 
 #if defined(mingw32_HOST_OS)
@@ -91,7 +91,7 @@ renderSocketConfigError (GetAddrInfoError addr ex) =
 -- * node cli
 -- * systemd socket activation
 --
-gatherConfiguredSockets :: NodeConfigurationF
+gatherConfiguredSockets :: NodeConfiguration
                         -> ExceptT SocketConfigError IO
                                    (SocketOrSocketInfo [Socket] [AddrInfo],
                                     SocketOrSocketInfo Socket SocketPath)

@@ -30,7 +30,7 @@ import           Data.Version (showVersion)
 import           GHC.Clock (getMonotonicTimeNSec)
 import           Network.HostName (getHostName)
 import           Network.Socket (AddrInfo, Socket)
-import           System.Directory (canonicalizePath, makeAbsolute)
+import           System.Directory (canonicalizePath, createDirectoryIfMissing, makeAbsolute)
 import           System.Environment (lookupEnv)
 
 import           Cardano.BM.Data.Aggregated (Measurable (..))
@@ -48,9 +48,9 @@ import           Cardano.BM.Trace
 import           Cardano.Config.Git.Rev (gitRev)
 import           Cardano.Node.Configuration.Logging (LoggingLayer (..), Severity (..),
                      createLoggingLayer, shutdownLoggingLayer)
-import           Cardano.Node.Configuration.POM (NodeConfigurationF (..),
+import           Cardano.Node.Configuration.POM (NodeConfiguration (..),
                      PartialNodeConfiguration (..), defaultPartialNodeConfiguration,
-                     makeNodeConfiguration, parseNodeConfigurationFP)
+                     makeNodeConfiguration, ncProtocol, parseNodeConfigurationFP)
 import           Cardano.Node.Types
 import           Cardano.Tracing.Config (TraceOptions (..), TraceSelection (..))
 
@@ -94,11 +94,12 @@ import           Cardano.Node.TUI.Run
 runNode
   :: PartialNodeConfiguration
   -> IO ()
-runNode cmd@PartialNodeConfiguration{pncConfigFile} = do
-    configYamlPc <- parseNodeConfigurationFP $ getLast pncConfigFile
+runNode cmdPc = do
 
-    nc <- case makeNodeConfiguration $ cmd <> configYamlPc <> defaultPartialNodeConfiguration of
-            Left err -> panic $ Text.pack err
+    configYamlPc <- parseNodeConfigurationFP . getLast $ pncConfigFile cmdPc
+
+    nc <- case makeNodeConfiguration $ cmdPc <> configYamlPc <> defaultPartialNodeConfiguration of
+            Left err -> panic $ "Error in creating the NodeConfiguration: " <> Text.pack err
             Right nc' -> return nc'
 
     eLoggingLayer <- runExceptT $ createLoggingLayer
@@ -176,7 +177,7 @@ runNode cmd@PartialNodeConfiguration{pncConfigFile} = do
 #endif
     shutdownLoggingLayer loggingLayer
 
-logTracingVerbosity :: NodeConfigurationF -> Tracer IO String -> IO ()
+logTracingVerbosity :: NodeConfiguration -> Tracer IO String -> IO ()
 logTracingVerbosity nc tracer =
   case ncTraceConfig nc of
     TracingOff -> return ()
@@ -251,7 +252,7 @@ handleSimpleNode
   => Consensus.Protocol IO blk (BlockProtocol blk)
   -> Trace IO Text
   -> Tracers RemoteConnectionId LocalConnectionId blk
-  -> NodeConfigurationF
+  -> NodeConfiguration
   -> (NodeKernel IO RemoteConnectionId LocalConnectionId blk -> IO ())
   -- ^ Called on the 'NodeKernel' after creating it, but before the network
   -- layer is initialised.  This implies this function must not block,
@@ -351,12 +352,12 @@ handleSimpleNode p trace nodeTracers nc onKernel = do
     }
 
   createTracers
-    :: NodeConfigurationF
+    :: NodeConfiguration
     -> Trace IO Text
     -> Tracer IO Text
     -> Consensus.TopLevelConfig blk
     -> IO ()
-  createTracers ncf@NodeConfigurationF{ncNodeAddr, ncValidateDB}
+  createTracers ncf@NodeConfiguration{ncNodeAddr, ncValidateDB}
                 tr tracer cfg = do
          eitherTopology <- readTopologyFile ncf
          nt <- either
@@ -383,7 +384,7 @@ handleSimpleNode p trace nodeTracers nc onKernel = do
              nTr = appendName "networkMagic" tr
              vTr = appendName "version" tr
              cTr = appendName "commit"  tr
-         traceNamedObject rTr (meta, LogMessage ("THIS SHOULD BE THE PROTOCOL")) --TODO: Fix me
+         traceNamedObject rTr (meta, LogMessage . Text.pack . protocolName $ ncProtocol nc)
          traceNamedObject nTr (meta, LogMessage ("NetworkMagic " <> show (unNetworkMagic . getNetworkMagic $ Consensus.configBlock cfg)))
          traceNamedObject vTr (meta, LogMessage . pack . showVersion $ version)
          traceNamedObject cTr (meta, LogMessage gitRev)
@@ -394,9 +395,11 @@ handleSimpleNode p trace nodeTracers nc onKernel = do
 -- Helper functions
 --------------------------------------------------------------------------------
 
-canonDbPath :: NodeConfigurationF -> IO FilePath
-canonDbPath NodeConfigurationF{ncDatabaseFile = DbFile dbFp} =
-  canonicalizePath =<< makeAbsolute dbFp
+canonDbPath :: NodeConfiguration -> IO FilePath
+canonDbPath NodeConfiguration{ncDatabaseFile = DbFile dbFp} = do
+  fp <- canonicalizePath =<< makeAbsolute dbFp
+  createDirectoryIfMissing True fp
+  return fp
 
 createDiffusionArguments
   :: SocketOrSocketInfo [Socket] [AddrInfo]
