@@ -39,6 +39,7 @@ import           Ouroboros.Consensus.BlockchainTime (SystemStart (..))
 import qualified Shelley.Spec.Ledger.BaseTypes as Shelley
 import qualified Shelley.Spec.Ledger.TxData as Shelley
 
+import           Cardano.Api.MetaData
 import           Cardano.Api.Protocol (Protocol (..))
 import           Cardano.Api.Typed hiding (PoolId)
 
@@ -443,6 +444,7 @@ pTransaction =
                                    <*> pTxFee
                                    <*> many pCertificateFile
                                    <*> many pWithdrawal
+                                   <*> pTxMetadataJsonSchema
                                    <*> many pMetaDataFile
                                    <*> optional pUpdateProposalFile
                                    <*> pTxBodyFile Output
@@ -881,6 +883,25 @@ pPoolMetaDataFile =
       <> Opt.help "Filepath of the pool metadata."
       <> Opt.completer (Opt.bashCompleter "file")
       )
+
+pTxMetadataJsonSchema :: Parser TxMetadataJsonSchema
+pTxMetadataJsonSchema =
+    (  Opt.flag' ()
+        (  Opt.long "--json-metadata-no-schema"
+        <> Opt.help "Use the \"no schema\" conversion from JSON to tx metadata."
+        )
+    *> pure TxMetadataJsonNoSchema
+    )
+  <|>
+    (  Opt.flag' ()
+        (  Opt.long "--json-metadata-detailed-schema"
+        <> Opt.help "Use the \"detailed schema\" conversion from JSON to tx metadata."
+        )
+    *> pure TxMetadataJsonDetailedSchema
+    )
+  <|>
+    -- Default to the no-schema conversion.
+    pure TxMetadataJsonNoSchema
 
 pMetaDataFile :: Parser MetaDataFile
 pMetaDataFile =

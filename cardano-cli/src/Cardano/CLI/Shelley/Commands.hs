@@ -47,6 +47,7 @@ module Cardano.CLI.Shelley.Commands
 import           Data.Text (Text)
 import           Prelude
 
+import           Cardano.Api.MetaData
 import           Cardano.Api.Protocol (Protocol)
 import           Cardano.Api.Typed hiding (PoolId)
 
@@ -157,6 +158,7 @@ data TransactionCmd
       Lovelace
       [CertificateFile]
       [(StakeAddress, Lovelace)]
+      TxMetadataJsonSchema
       [MetaDataFile]
       (Maybe UpdateProposalFile)
       TxBodyFile
